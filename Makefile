@@ -27,7 +27,8 @@ SCALARFIELD_INCLUDE_FILES = ID_scalar_field_ADM_quantities.h               \
                             scalar_field_Tmunu.h                           \
                             scalarfield_interp.h
 
-HELPERS_INCLUDE_FILES = output_central_values.h                            \
+HELPERS_INCLUDE_FILES = check_regrid_criterion.h                           \
+                        output_central_values.h                            \
                         regrid.h
 
 
@@ -44,9 +45,6 @@ $(EXE): $(OBJ)
 
 $(OBJ): %.o : %.c $(INC)
 	$(CC) $(CFLAGS) -c $<
-
-test:
-	@echo "INC: $(INC)"
 
 clean:
 	rm -f $(OBJ) $(EXE)
