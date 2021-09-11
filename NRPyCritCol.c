@@ -1,5 +1,3 @@
-
-
 // Part P1: Import needed header files
 #include "BSSN_Ccodes/NGHOSTS.h" // A NRPy+-generated file, which is set based on FD_CENTDERIVS_ORDER.
 #include "stdio.h"
@@ -27,17 +25,6 @@ const REAL REGRID_CRITERION = pow(200.0,1.0/30.0);
 const int max_number_of_regrids = 30;
 
 #define TFINAL (6.58)
-
-// Set whether or not a checkpoint file will be generated at t = t_checkpoint
-const int generate_checkpoint_file = 0;
-const REAL t_checkpoint            = 6.542;
-
-// Set whether or not to restart a simulation from a checkpoint file
-//const int restart_from_checkpoint = 1;
-#define RESTART_FROM_CHECKPOINT (0)
-// Set checkpoint file name
-char *in_checkpoint_filename;
-char out_checkpoint_filename[100] = "checkpoint_initial_data_out.dat";
 
 // Step P3b: Free parameters for the spacetime evolution
 REAL eta; // Gamma-driving shift condition parameter.
@@ -144,24 +131,6 @@ void rhs_eval(const int Nxx[3],const int Nxx_plus_2NGHOSTS[3],const REAL dxx[3],
 #include "BSSN_Ccodes/BSSN_plus_Scalar_Field_RHSs.h"
 }
 
-// ADM mass function
-/* REAL MADM(REAL *xx[3], const REAL dxx[3], const int Nxx_plus_2NGHOSTS[3],  */
-/* const int i0, const int i1, const int i2, REAL *in_gfs ) { */
-/* #include "ADM_mass.h"     */
-/* } */
-
-// Regridding parameters
-#define MAX_REGRIDS (10)
-#define NUMBER_OF_REGRIDS (10)
-#define AMPL_REDUCTION_FACTOR (200.0)
-/* Now we set the regridding factor. The amplitude is divided by this
- * factor after each regrid. The idea is that after the maximum number
- * of regrids is performed, then AMPL has been reduced by a factor of
- * AMPL_REDUCTION_FACTOR.
- */
-const REAL AMPL_REGRIDDING_FACTOR = pow(AMPL_REDUCTION_FACTOR,1.0/NUMBER_OF_REGRIDS);
-
-
 // Regridding functions
 #include "Helpers_Ccodes/regrid.h"
 
@@ -177,13 +146,8 @@ const REAL AMPL_REGRIDDING_FACTOR = pow(AMPL_REDUCTION_FACTOR,1.0/NUMBER_OF_REGR
 // Step 4: Free all allocated memory
 int main(int argc, const char *argv[]) {
     // Step 0a: Read command-line input, error out if nonconformant
-#if( !RESTART_FROM_CHECKPOINT )
     if(argc != 8 || atoi(argv[1]) < NGHOSTS) {
         fprintf(stderr,"Error: Expected three command-line arguments: ./SFC_Playground Nx0 Nx1 Nx2 sinhA sinhW diss_strength_eta diss_strength_KO,\n");
-#else
-    if(argc != 9 || atoi(argv[1]) < NGHOSTS) {
-        fprintf(stderr,"Error: Expected three command-line arguments: ./SFC_Playground Nx0 Nx1 Nx2 sinhA sinhW diss_strength_eta diss_strength_KO checkpoint_file,\n");
-#endif
         fprintf(stderr,"where Nx[0,1,2] is the number of grid points in the 0, 1, and 2 directions.\n");
         fprintf(stderr,"Nx[] MUST BE larger than NGHOSTS (= %d)\n",NGHOSTS);
         exit(1);
@@ -199,9 +163,6 @@ int main(int argc, const char *argv[]) {
     SINHW         = atof(argv[5]);
     eta           = atof(argv[6]);
     diss_strength = atof(argv[7]);
-#if( RESTART_FROM_CHECKPOINT )
-    in_checkpoint_filename = argv[8];
-#endif
 
     /* clear central values file */
     char central_values_filename_clear[100];
@@ -216,7 +177,6 @@ int main(int argc, const char *argv[]) {
     const int Nxx_plus_2NGHOSTS_tot = Nxx_plus_2NGHOSTS[0]*Nxx_plus_2NGHOSTS[1]*Nxx_plus_2NGHOSTS[2];
 #include "BSSN_Ccodes/xxminmax.h"
 
-#if( !RESTART_FROM_CHECKPOINT )
     /* SFC INPUT ROUTINE */
     // Open the data file:
     char filename[100];
@@ -252,8 +212,6 @@ int main(int argc, const char *argv[]) {
     SFC_in.psi4_arr  = psi4_arr;
     SFC_in.alpha_arr = alpha_arr;
     /* END SFC INPUT ROUTINE */
-
-#endif
     
     // Step 0c: Allocate memory for gridfunctions
     REAL *evol_gfs    = (REAL *)malloc(sizeof(REAL) * NUM_EVOL_GFS * Nxx_plus_2NGHOSTS_tot);
@@ -279,23 +237,15 @@ int main(int argc, const char *argv[]) {
     }
     
     // Step 0d.iii: Set timestep based on smallest proper distance between gridpoints and CFL factor
-    REAL dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
-    //printf("# Timestep set to = %e\n",(double)dt);
-    if( generate_checkpoint_file == 0 ) {
-      t_final = MIN(TFINAL,AMPL);
-    }
-    else {
-      t_final = MIN(t_checkpoint,AMPL);
-    }
-    int N_final = (int)(t_final / dt + 0.5); // The number of iterations in time.
-    //Add 0.5 to account for C rounding down integers.
+    REAL dt      = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
+    REAL t_final = MIN(TFINAL,AMPL);
+    int N_final  = (int)(t_final / dt + 0.5); // The number of iterations in time. Add 0.5 to account for C rounding down integers.
 
     // Step 0e: Find ghostzone mappings and parities:
     gz_map *bc_gz_map = (gz_map *)malloc(sizeof(gz_map)*Nxx_plus_2NGHOSTS_tot);
     parity_condition *bc_parity_conditions = (parity_condition *)malloc(sizeof(parity_condition)*Nxx_plus_2NGHOSTS_tot);
     set_up_bc_gz_map_and_parity_conditions(Nxx_plus_2NGHOSTS,xx,dxx,xxmin,xxmax,  bc_gz_map, bc_parity_conditions);
 
-#if( !RESTART_FROM_CHECKPOINT )
     // Step 1: Convert the ADM initial data to BSSN initial data
     ID_BSSN__ALL_BUT_LAMBDAs(Nxx_plus_2NGHOSTS, xx, SFC_in, evol_gfs);
     apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions, NUM_EVOL_GFS, evol_gf_parity, evol_gfs);
@@ -315,75 +265,14 @@ int main(int argc, const char *argv[]) {
     // Step 3b: Evaluate Hamiltonian constraint violation
     Momentum_constraints(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs);
     apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs);
-
-#else
-
-    FILE *checkpoint_file = fopen(in_checkpoint_filename,"r");
-    read_checkpoint_datafile(checkpoint_file, evol_gfs);
-    fclose(checkpoint_file);
-
-    compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs);
-    apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs);
-
-    /* apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions, NUM_EVOL_GFS, evol_gf_parity, evol_gfs); */
-    /* enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      
-    fprintf(stderr,"Starting run from checkpoint file \"%s\"\n",in_checkpoint_filename);
-
-    /* FILE *checkpoint_file_validation = fopen("checkpoint_initial_data_validation.dat","w"); */
-    /* for(int jj=0; jj<Nxx_plus_2NGHOSTS_tot; jj++) { */
-    /*   fprintf(checkpoint_file_validation,"%.15e\n",evol_gfs[jj]); */
-    /* } */
-    /* fclose(checkpoint_file_validation); */
-
-#endif
- 
-    // Compute and output the ADM mass at the outer boundary along the radial direction
-    /* REAL M_ADM = 0.0; */
-    /* LOOP_REGION(Nxx_plus_2NGHOSTS[0]-NGHOSTS-1,Nxx_plus_2NGHOSTS[0]-NGHOSTS, */
-    /* 		NGHOSTS,NGHOSTS+1, */
-    /* 		NGHOSTS,NGHOSTS+1) { */
-
-    /*   REAL xCart[3]; */
-    /*   xxCart(xx,i0,i1,i2, xCart); */
-
-    /*   const REAL sinth = sin(xx[1][i1]); */
-    /*   const REAL r2    = xCart[0]*xCart[0] + xCart[1]*xCart[1] + xCart[2]*xCart[2]; */
-    /*   M_ADM += MADM(xx, dxx, Nxx_plus_2NGHOSTS, i0, i1, i2, evol_gfs) * r2 * sinth * dxx[1] * dxx[2]; */
-
-    /* } */
-
-    /* fprintf(stderr,"ADM mass = %.15e\n",M_ADM); */
     
     // Step 3: Start the timer, for keeping track of how fast the simulation is progressing.
     struct timespec start, end;
     clock_gettime(CLOCK_REALTIME, &start);
     
-    int regrid_count = 0;
-    
-    /* fprintf(stderr,"dr_min = %.4e\n",dt/CFL_FACTOR); */
-    
     // Step 4: Integrate the initial data forward in time using the Method of Lines and RK4
-    REAL t;
-#if( !RESTART_FROM_CHECKPOINT )
-      t = 0.0;
-#else
-      t = t_checkpoint;
-      N_final = (int)( (t_final-t) / dt + 0.5 );
-#endif
-    int n = 0;
-
-    int lapse_colapsed = 0;
-
-    // output_central_values(t, Nxx_plus_2NGHOSTS, evol_gfs, aux_gfs);
-
-    /* for( int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++ ) { */
-    /*   fprintf(stderr,"%.15e\n",evol_gfs[IDX4(which_gf,NGHOSTS,NGHOSTS,NGHOSTS)]); */
-    /* } */
-
-    /* for( int which_aux_gf = 0; which_aux_gf < NUM_AUX_GFS; which_aux_gf++ ) { */
-    /*   fprintf(stderr,"%.15e\n",aux_gfs[IDX4(which_aux_gf,NGHOSTS,NGHOSTS,NGHOSTS)]); */
-    /* } */
+    int n  = 0  , lapse_colapsed=0, regrid_count=0;
+    REAL t = 0.0;
     
     while( t < t_final ) { // Main loop to progress forward in time.
                                  
@@ -443,7 +332,7 @@ int main(int argc, const char *argv[]) {
       compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs);
       apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs);
 
-      /* Check whether or not the lapse function has collapsed and output central values */
+      // Check whether or not the lapse function has collapsed and output central values
       {
 	const int i0 = NGHOSTS;
 	const int i1 = NGHOSTS;
@@ -466,8 +355,7 @@ int main(int argc, const char *argv[]) {
 	fclose(central_values);
 
 	if( alpha_c < 0.005 ) {
-	  //fprintf(stderr,"\nThe lapse function has collapsed...\n");
-	  lapse_colapsed = 1;
+	  fprintf(stderr,"\nThe lapse function has collapsed...\n");
 	  break;
 	}
       }
@@ -485,7 +373,6 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
 
       }
 
@@ -500,13 +387,12 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
 
       }
 
@@ -521,13 +407,12 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
 
       }
 
@@ -542,13 +427,12 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
 
       }
 
@@ -563,13 +447,12 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
 
       }
 
@@ -584,13 +467,12 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
 
       }
 
@@ -605,16 +487,12 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
-      	/* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); */
-      	/* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); */
-      	/* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); */
 
       }
 
@@ -629,16 +507,12 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
-      	/* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); */
-      	/* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); */
-      	/* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); */
 
       }
 
@@ -653,16 +527,12 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
-      	/* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); */
-      	/* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); */
-      	/* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); */
 
       }
 
@@ -677,44 +547,19 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
-      	/* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); */
-      	/* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); */
-      	/* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); */
 
       }
 
-      /* if( ( regrid_count < max_number_of_regrids ) && check_regrid_criterion( Nxx_plus_2NGHOSTS, dxx, xx, evol_gfs ) ) { */
-  
-      /* 	const int regrid_stencil_size = 2*NGHOSTS - 1; */
-      /* 	regrid_AMPL( regrid_stencil_size, AMPL/REGRID_CRITERION, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs); */
-      /* 	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      /* 	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-
-      /* 	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR); */
-      /* 	regrid_count++; */
-
-      /* 	N_final = (int)( t_final / dt + 0.5); */
-      /* 	/\* fprintf(stderr,"\nRegrid #%d\n",regrid_count); *\/ */
-
-      /* } */
-
       if( ( t > 6.46 ) && ( regrid_count == 10 ) ) {
-      /* /\* /\\* if( ( t > 6.455 ) && ( regrid_count == 0 ) ) { *\\/ *\/ */
-
-      	/* diss_strength = 7.0; */
 
       	const int regrid_stencil_size = 2*NGHOSTS - 1;
       	regrid_AMPL( regrid_stencil_size,48, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs );
-      	/* regrid_SINHW( regrid_stencil_size, 0.09, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
       	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs);
       	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs);
       	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs);
@@ -722,25 +567,19 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
-      	/* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); */
-      	/* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); */
-      	/* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); */
 
       }
 
       if( ( t > 6.47 ) && ( regrid_count == 11 ) ) {
-      /* /\* if( ( t > 6.460 ) && ( regrid_count == 1 ) ) { *\/ */
 
       	const int regrid_stencil_size = 2*NGHOSTS - 1;
       	regrid_AMPL( regrid_stencil_size,32, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs );
-      	/* regrid_SINHW( regrid_stencil_size, 0.08, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
       	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs);
       	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs);
       	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs);
@@ -748,21 +587,16 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
-      	/* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); */
-      	/* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); */
-      	/* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); */
 
       }
 
       if( ( t > 6.48 ) && ( regrid_count == 12 ) ) {
-      /* if( ( t > 6.465 ) && ( regrid_count == 2 ) ) { */
 	
       	const int regrid_stencil_size = 2*NGHOSTS - 1;
       	regrid_AMPL( regrid_stencil_size,24, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs );
@@ -773,21 +607,16 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
-      	/* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); */
-      	/* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); */
-      	/* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); */
 
       }
 
       if( ( t > 6.49 ) && ( regrid_count == 13 ) ) {
-      /* if( ( t > 6.470 ) && ( regrid_count == 3 ) ) { */
 	
       	const int regrid_stencil_size = 2*NGHOSTS - 1;
       	regrid_AMPL( regrid_stencil_size,16, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs );
@@ -798,26 +627,20 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
-      	/* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); */
-      	/* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); */
-      	/* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); */
 
       }
 
       if( ( t > 6.552 ) && ( regrid_count == 14 ) ) {
-      /* if( ( t > 6.470 ) && ( regrid_count == 3 ) ) { */
 
         diss_strength = 7.0;
         
       	const int regrid_stencil_size = 2*NGHOSTS - 1;
-      	/* regrid_AMPL( regrid_stencil_size,13, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
 	regrid_SINHW( regrid_stencil_size,0.09, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs );
 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs);
       	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs);
@@ -826,25 +649,19 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
-      	/* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); */
-      	/* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); */
-      	/* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); */
 
       }
 
       if( ( t > 6.553 ) && ( regrid_count == 15 ) ) {
-      /* if( ( t > 6.470 ) && ( regrid_count == 3 ) ) { */
 	
       	const int regrid_stencil_size = 2*NGHOSTS - 1;
       	regrid_AMPL( regrid_stencil_size,14, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs );
-      	/* regrid_SINHW( regrid_stencil_size,0.08, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
       	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs);
       	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs);
       	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs);
@@ -852,21 +669,16 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
-      	/* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); */
-      	/* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); */
-      	/* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); */
 
       }
 
       if( ( t > 6.554 ) && ( regrid_count == 16 ) ) {
-      /* if( ( t > 6.470 ) && ( regrid_count == 3 ) ) { */
 	
       	const int regrid_stencil_size = 2*NGHOSTS - 1;
       	regrid_AMPL( regrid_stencil_size,12, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs );
@@ -877,21 +689,16 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
-      	/* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); */
-      	/* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); */
-      	/* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); */
 
       }
 
       if( ( t > 6.555 ) && ( regrid_count == 17 ) ) {
-      /* if( ( t > 6.470 ) && ( regrid_count == 3 ) ) { */
 	
       	const int regrid_stencil_size = 2*NGHOSTS - 1;
       	regrid_AMPL( regrid_stencil_size,10, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs );
@@ -902,21 +709,16 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
-      	/* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); */
-      	/* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); */
-      	/* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); */
 
       }
 
       if( ( t > 6.556 ) && ( regrid_count == 18 ) ) {
-      /* if( ( t > 6.470 ) && ( regrid_count == 3 ) ) { */
 	
       	const int regrid_stencil_size = 2*NGHOSTS - 1;
       	regrid_AMPL( regrid_stencil_size,8, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs );
@@ -927,389 +729,18 @@ int main(int argc, const char *argv[]) {
 
       	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR);
 
-      	/* Adjust t_final */
+      	// Adjust t_final
       	t_final = MIN(t_final,t+AMPL);
 
       	N_final = (int)( t_final / dt + 0.5);
 
       	regrid_count++;
-      	/* fprintf(stderr,"\nRegrid #%d\n",regrid_count); */
-      	/* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); */
-      	/* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); */
-      	/* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); */
 
       }
-
-      /* if( ( t > 6.557 ) && ( regrid_count == 19 ) ) { */
-      /* /\* if( ( t > 6.470 ) && ( regrid_count == 3 ) ) { *\/ */
-	
-      /* 	const int regrid_stencil_size = 2*NGHOSTS - 1; */
-      /* 	regrid_AMPL( regrid_stencil_size,4, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
-      /* 	/\* regrid_SINHW( regrid_stencil_size,0.08, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); *\/ */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs); */
-      /* 	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      /* 	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-
-      /* 	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR); */
-
-      /* 	/\* Adjust t_final *\/ */
-      /* 	t_final = MIN(t_final,t+AMPL); */
-
-      /* 	N_final = (int)( t_final / dt + 0.5); */
-
-      /* 	regrid_count++; */
-      /* 	/\* fprintf(stderr,"\nRegrid #%d\n",regrid_count); *\/ */
-      /* 	/\* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); *\/ */
-      /* 	/\* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); *\/ */
-      /* 	/\* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); *\/ */
-
-      /* } */
-
-      /* if( ( t > 6.5731 ) && ( regrid_count == 20 ) ) { */
-      /* /\* if( ( t > 6.470 ) && ( regrid_count == 3 ) ) { *\/ */
-	
-      /* 	const int regrid_stencil_size = 2*NGHOSTS - 1; */
-      /* 	regrid_AMPL( regrid_stencil_size,1, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs); */
-      /* 	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      /* 	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-
-      /* 	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR); */
-
-      /* 	/\* Adjust t_final *\/ */
-      /* 	t_final = MIN(t_final,t+AMPL); */
-
-      /* 	N_final = (int)( t_final / dt + 0.5); */
-
-      /* 	regrid_count++; */
-      /* 	/\* fprintf(stderr,"\nRegrid #%d\n",regrid_count); *\/ */
-      /* 	/\* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); *\/ */
-      /* 	/\* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); *\/ */
-      /* 	/\* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); *\/ */
-
-      /* } */
-
-      /* if( ( t > 6.5732 ) && ( regrid_count == 21 ) ) { */
-      /* /\* if( ( t > 6.470 ) && ( regrid_count == 3 ) ) { *\/ */
-	
-      /* 	const int regrid_stencil_size = 2*NGHOSTS - 1; */
-      /* 	regrid_AMPL( regrid_stencil_size,5, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs); */
-      /* 	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      /* 	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-
-      /* 	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR); */
-
-      /* 	/\* Adjust t_final *\/ */
-      /* 	t_final = MIN(t_final,t+AMPL); */
-
-      /* 	N_final = (int)( t_final / dt + 0.5); */
-
-      /* 	regrid_count++; */
-      /* 	/\* fprintf(stderr,"\nRegrid #%d\n",regrid_count); *\/ */
-      /* 	/\* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); *\/ */
-      /* 	/\* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); *\/ */
-      /* 	/\* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); *\/ */
-
-      /* } */
-
-      /* if( ( t > 6.5734 ) && ( regrid_count == 22 ) ) { */
-      /* /\* if( ( t > 6.545 ) && ( regrid_count == 0 ) ) { *\/ */
-
-      /* 	diss_strength = 1.0; */
-
-      /* 	const int regrid_stencil_size = 2*NGHOSTS - 1; */
-      /* 	regrid_AMPL( regrid_stencil_size,4, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs); */
-      /* 	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      /* 	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-
-      /* 	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR); */
-
-      /* 	/\* Adjust t_final *\/ */
-      /* 	t_final = MIN(t_final,t+AMPL); */
-
-      /* 	N_final = (int)( t_final / dt + 0.5); */
-
-      /* 	regrid_count++; */
-      /* 	/\* fprintf(stderr,"\nRegrid #%d\n",regrid_count); *\/ */
-      /* 	/\* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); *\/ */
-      /* 	/\* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); *\/ */
-      /* 	/\* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); *\/ */
-
-      /* } */
-
-      /* /\* if( ( t > 6.546) && ( regrid_count == 15 ) ) { *\/ */
-      /* if( ( t > 6.5735) && ( regrid_count == 23 ) ) { */
-	
-      /* 	const int regrid_stencil_size = 2*NGHOSTS - 1; */
-      /* 	regrid_AMPL( regrid_stencil_size,3, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs); */
-      /* 	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      /* 	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-
-      /* 	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR); */
-
-      /* 	/\* Adjust t_final *\/ */
-      /* 	t_final = MIN(t_final,t+AMPL); */
-
-      /* 	N_final = (int)( t_final / dt + 0.5); */
-
-      /* 	regrid_count++; */
-      /* 	/\* fprintf(stderr,"\nRegrid #%d\n",regrid_count); *\/ */
-      /* 	/\* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); *\/ */
-      /* 	/\* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); *\/ */
-      /* 	/\* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); *\/ */
-
-      /* } */
-
-      /* /\* if( ( t > 6.547 ) && ( regrid_count == 16 ) ) { *\/ */
-      /* if( ( t > 6.5736 ) && ( regrid_count == 24 ) ) { */
-	
-      /* 	const int regrid_stencil_size = 2*NGHOSTS - 1; */
-      /* 	regrid_AMPL( regrid_stencil_size,2, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs); */
-      /* 	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      /* 	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-
-      /* 	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR); */
-
-      /* 	/\* Adjust t_final *\/ */
-      /* 	t_final = MIN(t_final,t+AMPL); */
-
-      /* 	N_final = (int)( t_final / dt + 0.5); */
-
-      /* 	regrid_count++; */
-      /* 	/\* fprintf(stderr,"\nRegrid #%d\n",regrid_count); *\/ */
-      /* 	/\* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); *\/ */
-      /* 	/\* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); *\/ */
-      /* 	/\* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); *\/ */
-
-      /* } */
-
-      /* /\* if( ( t > 6.548 ) && ( regrid_count == 17 ) ) { *\/ */
-      /* if( ( t > 6.5737 ) && ( regrid_count == 25 ) ) { */
-
-      /* 	const int regrid_stencil_size = 2*NGHOSTS - 1; */
-      /* 	regrid_AMPL( regrid_stencil_size,1, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs); */
-      /* 	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      /* 	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-
-      /* 	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR); */
-
-      /* 	/\* Adjust t_final *\/ */
-      /* 	t_final = MIN(t_final,t+AMPL); */
-
-      /* 	N_final = (int)( t_final / dt + 0.5); */
-
-      /* 	regrid_count++; */
-      /* 	/\* fprintf(stderr,"\nRegrid #%d\n",regrid_count); *\/ */
-      /* 	/\* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); *\/ */
-      /* 	/\* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); *\/ */
-      /* 	/\* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); *\/ */
-
-      /* } */
-
-      /* /\* if( ( t > 6.550 ) && ( regrid_count == 18 ) ) { *\q/ */
-      /* if( ( t > 6.5475 ) && ( regrid_count == 0 ) ) { */
-
-      /* 	diss_strength = 2.0; */
-	
-      /* 	const int regrid_stencil_size = 2*NGHOSTS - 1; */
-      /* 	regrid_SINHW( regrid_stencil_size, 0.09, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs); */
-      /* 	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      /* 	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-
-      /* 	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR); */
-
-      /* 	/\* Adjust t_final *\/ */
-      /* 	t_final = MIN(t_final,t+AMPL); */
-
-      /* 	N_final = (int)( t_final / dt + 0.5); */
-
-      /* 	regrid_count++; */
-      /* 	/\* fprintf(stderr,"\nRegrid #%d\n",regrid_count); *\/ */
-      /* 	/\* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); *\/ */
-      /* 	/\* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); *\/ */
-      /* 	/\* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); *\/ */
-
-      /* } */
-
-      /* /\* if( ( t > 6.550 ) && ( regrid_count == 18 ) ) { *\/ */
-      /* if( ( t > 6.5525 ) && ( regrid_count == 1 ) ) { */
-
-      /* 	/\* diss_strength = 8.0; *\/ */
-	
-      /* 	const int regrid_stencil_size = 2*NGHOSTS - 1; */
-      /* 	regrid_SINHW( regrid_stencil_size, 0.08, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs); */
-      /* 	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      /* 	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-
-      /* 	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR); */
-
-      /* 	/\* Adjust t_final *\/ */
-      /* 	t_final = MIN(t_final,t+AMPL); */
-
-      /* 	N_final = (int)( t_final / dt + 0.5); */
-
-      /* 	regrid_count++; */
-      /* 	/\* fprintf(stderr,"\nRegrid #%d\n",regrid_count); *\/ */
-      /* 	/\* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); *\/ */
-      /* 	/\* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); *\/ */
-      /* 	/\* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); *\/ */
-
-      /* } */
-
-      /* /\* if( ( t > 6.5650 ) && ( regrid_count == 19 ) ) { *\/ */
-      /* if( ( t > 6.5650 ) && ( regrid_count == 5 ) ) { */
-	
-      /* 	const int regrid_stencil_size = 2*NGHOSTS - 1; */
-      /* 	regrid_AMPL( regrid_stencil_size,2, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs); */
-      /* 	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      /* 	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-
-      /* 	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR); */
-
-      /* 	/\* Adjust t_final *\/ */
-      /* 	t_final = MIN(t_final,t+AMPL); */
-
-      /* 	N_final = (int)( t_final / dt + 0.5); */
-
-      /* 	regrid_count++; */
-      /* 	/\* fprintf(stderr,"\nRegrid #%d\n",regrid_count); *\/ */
-      /* 	/\* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); *\/ */
-      /* 	/\* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); *\/ */
-      /* 	/\* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); *\/ */
-
-      /* } */
-
-      /* /\* if( ( t > 6.5651 ) && ( regrid_count == 20 ) ) { *\/ */
-      /* if( ( t > 6.5651 ) && ( regrid_count == 6 ) ) { */
-	
-      /* 	const int regrid_stencil_size = 2*NGHOSTS - 1; */
-      /* 	regrid_AMPL( regrid_stencil_size,1, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs); */
-      /* 	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      /* 	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-
-      /* 	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR); */
-
-      /* 	/\* Adjust t_final *\/ */
-      /* 	t_final = MIN(t_final,t+AMPL); */
-
-      /* 	N_final = (int)( t_final / dt + 0.5); */
-
-      /* 	regrid_count++; */
-      /* 	/\* fprintf(stderr,"\nRegrid #%d\n",regrid_count); *\/ */
-      /* 	/\* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); *\/ */
-      /* 	/\* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); *\/ */
-      /* 	/\* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); *\/ */
-
-      /* } */
-
-      /* /\* if( ( t > 6.5652 ) && ( regrid_count == 21 ) ) { *\/ */
-      /* if( ( t > 6.5652 ) && ( regrid_count == 7 ) ) { */
-	
-      /* 	const int regrid_stencil_size = 2*NGHOSTS - 1; */
-      /* 	regrid_AMPL( regrid_stencil_size,0.5, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs); */
-      /* 	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      /* 	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-
-      /* 	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR); */
-
-      /* 	/\* Adjust t_final *\/ */
-      /* 	t_final = MIN(t_final,t+AMPL); */
-
-      /* 	N_final = (int)( t_final / dt + 0.5); */
-
-      /* 	regrid_count++; */
-      /* 	/\* fprintf(stderr,"\nRegrid #%d\n",regrid_count); *\/ */
-      /* 	/\* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); *\/ */
-      /* 	/\* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); *\/ */
-      /* 	/\* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); *\/ */
-
-      /* } */
-
-      /* /\* if( ( t > 6.5652 ) && ( regrid_count == 22 ) ) { *\/ */
-      /* if( ( t > 6.5652 ) && ( regrid_count == 8 ) ) { */
-
-      /* 	const int regrid_stencil_size = 2*NGHOSTS - 1; */
-      /* 	regrid_AMPL( regrid_stencil_size,0.25, Nxx_plus_2NGHOSTS, xx, next_in_gfs, evol_gfs ); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_EVOL_GFS,evol_gf_parity, evol_gfs); */
-      /* 	enforce_detgammabar_constraint(Nxx_plus_2NGHOSTS, xx, evol_gfs); */
-      /* 	compute_scalar_field_Tmunu(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-      /* 	apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-
-      /* 	dt = find_timestep(Nxx_plus_2NGHOSTS, dxx,xx, CFL_FACTOR); */
-
-      /* 	/\* Adjust t_final *\/ */
-      /* 	t_final = MIN(t_final,t+AMPL); */
-
-      /* 	N_final = (int)( t_final / dt + 0.5); */
-
-      /* 	regrid_count++; */
-      /* 	/\* fprintf(stderr,"\nRegrid #%d\n",regrid_count); *\/ */
-      /* 	/\* fprintf(stderr,"AMPL    = %.3lf\n",regrid_count,AMPL); *\/ */
-      /* 	/\* fprintf(stderr,"dr_min  = %.4e\n",dt/CFL_FACTOR); *\/ */
-      /* 	/\* fprintf(stderr,"t_final = %.3lf\n\n",regrid_count,t_final); *\/ */
-
-      /* } */
-
-/* #pragma omp parallel for */
-/*       for( int k=0; k<NUM_EVOL_GFS * Nxx_plus_2NGHOSTS_tot; k++ ) { */
-/* 	evol_gfs[k] = next_in_gfs[k]; */
-/*       } */
-
-/*       Step 3: Output 2D data file, for visualization */
-
-/*       if(n%200 == 0) { */
-/*           // Evaluate Hamiltonian constraint violation */
-/*           Hamiltonian_constraint(Nxx,Nxx_plus_2NGHOSTS,dxx, xx, evol_gfs, aux_gfs); */
-/*           apply_bcs(Nxx, Nxx_plus_2NGHOSTS, bc_gz_map,bc_parity_conditions,NUM_AUX_GFS,aux_gf_parity, aux_gfs); */
-            
-/*           char filename[100]; */
-/*           sprintf(filename,"out%d-%08d.txt",Nxx[0],n); */
-/*           FILE *out2D = fopen(filename, "w"); */
-/*           for(int i0=NGHOSTS; i0<Nxx_plus_2NGHOSTS[0]-NGHOSTS; i0++){ */
-/*               int idx = IDX3(i0,NGHOSTS,NGHOSTS); */
-/*               REAL xCart[3]; */
-/*               xxCart(xx,i0,NGHOSTS,NGHOSTS, xCart); */
-/*               const REAL rr = sqrt(xCart[0]*xCart[0] + xCart[1]*xCart[1] + xCart[2]*xCart[2]); */
-/*               fprintf(out2D,"%.15e %.15e %.15e %.15e %.15e %.15e %.15e %.15e\n", */
-/*                       t, */
-/*                       rr, */
-/*                       evol_gfs[IDX4pt(SFGF,idx)], */
-/*                       evol_gfs[IDX4pt(SFMGF,idx)], */
-/*                       evol_gfs[IDX4pt(ALPHAGF,idx)], */
-/*                       evol_gfs[IDX4pt(CFGF,idx)], */
-/*                       evol_gfs[IDX4pt(HDD00GF,idx)], */
-/*                       log10(fabs(aux_gfs[IDX4pt(HGF,idx)]))); */
-/*           } */
-/*           fclose(out2D); */
-/*       } */
 
       n++;
       t += dt;
 
-      // if( ( t > 6.0 ) && ( evol_gfs[IDX4(ALPHAGF,NGHOSTS,NGHOSTS,NGHOSTS)] < 1e-3 ) ) break;
-        
       clock_gettime(CLOCK_REALTIME, &end);
       const long long unsigned int time_in_ns = 1000000000L * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
       const REAL s_per_iteration_avg          = ((REAL)time_in_ns / (REAL)n) / 1.0e9;
@@ -1324,7 +755,7 @@ int main(int argc, const char *argv[]) {
 
       // Progress indicator printing to stderr
       fprintf(stderr,"%c[2K", 27); // Clear the line
-      fprintf(stderr,"It: %d t=%.3f %.2f%% | Exec time: %.0f s; ETA %.0f s | t/h %.2f | gp/s %.2e | # of regrids: %d | sinhA = %.3lf | sinhW = %.3lf | KO = %.1lf | eta = %.2lf\r",  // \r is carriage return, move cursor to the beginning of the line
+      fprintf(stderr,"It: %d t=%.3f %.2f%% | Exec time: %.0f s; ETA %.0f s | t/h %.2f | gp/s %.2e | # of regrids: %d | sinhA = %.3lf | sinhW = %.3lf | eta_shift = %.2lf | KO = %.1lf\r",  // \r is carriage return, move cursor to the beginning of the line
       	      n, t, 100.0*t/t_final, execution_time_in_s,
       	      time_remaining_in_sec, time_per_hour, (REAL)RHS_pt_evals_per_sec, regrid_count,AMPL,SINHW,diss_strength,eta);
       fflush(stderr); // Flush the stderr buffer
@@ -1332,35 +763,9 @@ int main(int argc, const char *argv[]) {
     } // End main loop to progress forward in time.
     fprintf(stderr,"\n"); // Clear the line.
 
-    if( generate_checkpoint_file == 1 ) {
-      FILE *checkpoint_file = fopen(out_checkpoint_filename,"w");
-      for(int jj=0; jj<Nxx_plus_2NGHOSTS_tot*NUM_EVOL_GFS; jj++) {
-	fprintf(checkpoint_file,"%.15e\n",evol_gfs[jj]);
-      }
-      fclose(checkpoint_file);
-      fprintf(stderr,"Just generated the checkpoint file \"%s\"\n",out_checkpoint_filename);
-    }
-
-    /* fprintf(stderr,"Number of regrids performed: %d\n",regrid_count); */
-    
-    /* if(evol_gfs[IDX4(ALPHAGF,NGHOSTS,NGHOSTS,NGHOSTS)] < 1e-3) */
-    /*   fprintf(stderr,"Strong\n"); */
-    /* else */
-    /*   fprintf(stderr,"Weak\n"); */
-
-    printf("%d\n",lapse_colapsed);
-    
     /* Step 4: Free all allocated memory */
     free(bc_gz_map);
     free(bc_parity_conditions);
-
-#if( !RESTART_FROM_CHECKPOINT )
-    free(r_arr);
-    free(sf_arr);
-    free(psi4_arr);
-    free(alpha_arr);
-#endif
-
     free(aux_gfs);
     free(evol_gfs);
     free(k1_gfs);
