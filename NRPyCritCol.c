@@ -132,10 +132,10 @@ void rhs_eval(const int Nxx[3],const int Nxx_plus_2NGHOSTS[3],const REAL dxx[3],
 }
 
 // Regridding functions
-#include "Helpers_Ccodes/regrid.h"
+#include "helpers_Ccodes/regrid.h"
 
 // Output gridfunctions at the origin
-#include "Helpers_Ccodes/output_central_values.h"
+#include "helpers_Ccodes/output_central_values.h"
 
 // main() function:
 // Step 0: Read command-line input, set up grid structure, allocate memory for gridfunctions, set up coordinates
