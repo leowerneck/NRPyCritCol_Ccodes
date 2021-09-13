@@ -36,7 +36,7 @@ OBJ = $(SRC:.c=.o)
 EXE = $(SRC:.c=)
 INC = $(addprefix BSSN_Ccodes/,       $(BSSN_INCLUDE_FILES)       ) \
       $(addprefix ScalarField_Ccodes/,$(SCALARFIELD_INCLUDE_FILES)) \
-      $(addprefix Helpers_Ccodes/,    $(HELPERS_INCLUDE_FILES)    )
+      $(addprefix helpers_Ccodes/,    $(HELPERS_INCLUDE_FILES)    )
 
 all: $(EXE)
 
