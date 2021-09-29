@@ -88,3 +88,55 @@ fig.text(0.03, 0.5, r"$\alpha_{\rm central}$", ha='center', va='center', rotatio
 
 plt.savefig(outfile,dpi=300,bbox_inches='tight',facecolor='white')
 plt.close(fig)
+
+# Compute proper time
+tauw = np.zeros(len(t_w))
+for i in range(len(t_w)):
+    tauw[i] = np.trapz(alp_w[:i],x=t_w[:i]) # compute_proper_time(t_w,alp_w)
+
+# Compute logarithmic proper time
+tau_star = 1.56275073
+N        = len(tauw[tauw<=tau_star])
+xiw      = np.zeros(N)
+sfxiw    = np.zeros(N)
+for i in range(N):
+    xiw[i]   = -np.log(np.abs(tau_star-tauw[i]))
+    sfxiw[i] = sf_w[i]
+
+# Begin plotting
+fig,ax = plt.subplots(ncols=3,figsize=(15,5),dpi=300,sharey=True)
+
+label_fontsize = 22
+ticks_fontsize = 20
+
+for i in range(3):
+    ax[i].grid()
+
+# Plot 1: Central scalar field as a function of coordinate time
+ax[0].set_ylabel(r"$\varphi_{\rm central}$",fontsize=label_fontsize)
+ax[0].set_xlabel(r"$t$",fontsize=label_fontsize)
+ax[0].plot(t_w,sf_w,'blue')
+ax[0].set_xticks([0,1,2,3,4,5,6,7])
+ax[0].set_xlim(-0.5,7.5)
+ax[0].set_xticklabels(["0","1","2","3","4","5","6","7"],fontsize=ticks_fontsize)
+ax[0].set_yticks([-0.6,-0.4,-0.2,0,0.2,0.4,0.6])
+ax[0].set_yticklabels(["-0.6","-0.4","-0.2","0.0","0.2","0.4","0.6"],fontsize=ticks_fontsize)
+
+# Plot 2: Central scalar field as a function of proper time
+ax[1].set_xlabel(r"$\tau$",fontsize=label_fontsize)
+ax[1].plot(tauw,sf_w,'blue')
+ax[1].set_xlim(-0.2,1.8)
+ax[1].set_xticks([0,0.4,0.8,1.2,1.6])
+ax[1].set_xticklabels(["0.0","0.4","0.8","1.2","1.6"],fontsize=ticks_fontsize)
+
+# Plot 3: Central scalar field as a function of proper time
+ax[2].set_xlabel(r"$\xi \equiv - \ln\left|\tau_{*}-\tau\right|$",fontsize=label_fontsize)
+ax[2].plot(xiw,sfxiw,'blue')
+ax[2].set_xlim(-2.5,17.5)
+ax[2].set_xticks([0,3,6,9,12,15])
+ax[2].set_xticklabels(["0","3","6","9","12","15"],fontsize=ticks_fontsize)
+
+outfile = "central_scalar_field.png"
+plt.tight_layout()
+plt.savefig(outfile,dpi=300,bbox_inches='tight',facecolor='white')
+plt.close(fig)
