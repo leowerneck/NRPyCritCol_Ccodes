@@ -1,8 +1,8 @@
 const REAL invdx0 = 1.0/dxx[0];
-#pragma omp parallel for
 for(int i2=NGHOSTS; i2<NGHOSTS+Nxx[2]; i2++) {
     for(int i1=NGHOSTS; i1<NGHOSTS+Nxx[1]; i1++) {
         const REAL xx1 = xx[1][i1];
+#pragma omp parallel for
         for(int i0=NGHOSTS; i0<NGHOSTS+Nxx[0]; i0++) {
             const REAL xx0 = xx[0][i0];
             {

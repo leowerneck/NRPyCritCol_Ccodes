@@ -1,9 +1,9 @@
 void enforce_detgammabar_constraint(const int Nxx_plus_2NGHOSTS[3],REAL *xx[3], REAL *in_gfs) {
 
-#pragma omp parallel for
 for(int i2=0; i2<Nxx_plus_2NGHOSTS[2]; i2++) {
     for(int i1=0; i1<Nxx_plus_2NGHOSTS[1]; i1++) {
         const REAL xx1 = xx[1][i1];
+#pragma omp parallel for
         for(int i0=0; i0<Nxx_plus_2NGHOSTS[0]; i0++) {
             const REAL xx0 = xx[0][i0];
             /* 
