@@ -38,7 +38,7 @@ INC = $(addprefix BSSN_Ccodes/,       $(BSSN_INCLUDE_FILES)       ) \
       $(addprefix ScalarField_Ccodes/,$(SCALARFIELD_INCLUDE_FILES)) \
       $(addprefix helpers_Ccodes/,    $(HELPERS_INCLUDE_FILES)    )
 
-all: $(EXE)
+all: $(EXE) runscript.sh
 
 $(EXE): $(OBJ)
 	$(CC) $(CFLAGS) $< -o $@ $(CLIBS)
@@ -46,8 +46,11 @@ $(EXE): $(OBJ)
 $(OBJ): %.o : %.c $(INC)
 	$(CC) $(CFLAGS) -c $<
 
+runscript.sh: generate_runscript.py
+	python generate_runscript.py
+
 clean:
-	rm -f $(OBJ) $(EXE)
+	rm -f $(OBJ) $(EXE) runscript.sh
 
 veryclean: clean
 	rm -f *.dat *.txt *.png
